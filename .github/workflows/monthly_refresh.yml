@@ -1,0 +1,120 @@
+# Monthly refresh: load the newest BTS month, rebuild and test the warehouse, and publish
+# fresh dashboard files ONLY if every test passes. Opens a GitHub issue if anything fails.
+#
+# GitHub's runners have no permanent database, so each run rebuilds the rolling window from
+# the raw archive (S3 if configured, otherwise the Actions cache) and downloads only new months.
+name: Monthly refresh
+
+on:
+  schedule:
+    - cron: "17 14 15 * *"   # 14:17 UTC on the 15th of every month
+  workflow_dispatch:
+    inputs:
+      months_back:
+        description: "Months of history to keep"
+        default: "24"
+
+permissions:
+  contents: write   # commit refreshed data/marts files
+  issues: write     # open an issue when the run fails
+
+concurrency:
+  group: monthly-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: flights
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGDATABASE: flights
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      MONTHS_BACK: ${{ inputs.months_back || vars.MONTHS_BACK || '24' }}
+      # Optional S3 archive: add these as repository secrets/variables to turn it on
+      S3_BUCKET: ${{ vars.S3_BUCKET }}
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-west-2' }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore raw file cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data/cache
+          key: bts-raw-v1-${{ github.run_id }}
+          restore-keys: bts-raw-v1-
+
+      - name: Ingest new months
+        run: python -m pipeline.ingest --months-back "$MONTHS_BACK"
+
+      - name: Save raw file cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/cache
+          key: bts-raw-v1-${{ github.run_id }}
+
+      - name: Build and test the warehouse (stops here if any test fails)
+        working-directory: dbt
+        run: dbt build --profiles-dir .
+
+      - name: Check source freshness
+        working-directory: dbt
+        run: dbt source freshness --profiles-dir .
+
+      - name: Export dashboard files
+        run: python -m pipeline.export
+
+      - name: Publish (commit refreshed marts)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/marts
+          if git diff --cached --quiet; then
+            echo "No changes to publish." >> "$GITHUB_STEP_SUMMARY"
+          else
+            git commit -m "data: monthly refresh $(date -u +%Y-%m-%d)"
+            git push
+            echo "Published refreshed dashboard data." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-logs-${{ github.run_id }}
+          path: |
+            logs/
+            dbt/target/run_results.json
+          retention-days: 30
+
+      - name: Open an issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "Monthly refresh failed ($(date -u +%Y-%m-%d))" \
+            --body "The scheduled refresh failed, so the dashboard still shows the previous data. Run log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

@@ -1,0 +1,15 @@
+version: 2
+
+models:
+  - name: int_flights__enriched
+    description: >
+      Every flight with the project's business definitions (on-time, completed,
+      controllable delay, time of day, distance band) and its aircraft rotation context:
+      the same tail number's previous leg that day, found with LAG().
+    columns:
+      - name: flight_id
+        tests: [not_null]
+      - name: leg_number_of_day
+        description: 1 = the aircraft's first non-cancelled flight of the day.
+      - name: prev_leg_arr_delay_min
+        description: Arrival delay of the same aircraft's previous leg (null on the first leg).

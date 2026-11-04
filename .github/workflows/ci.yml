@@ -1,0 +1,76 @@
+# Runs on every push and pull request: proves the whole pipeline works end to end on
+# synthetic data, without depending on the BTS website being reachable.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: flights
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGDATABASE: flights
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      MONTHS_BACK: "3"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Create synthetic sample data
+        run: python scripts/make_sample_data.py --start 2026-05 --end 2026-07 --rows 15000
+
+      - name: Ingest (offline, from sample files)
+        run: python -m pipeline.ingest --offline --latest 2026-07 --months-back 3
+
+      - name: Re-run ingest - must skip every month (idempotency)
+        run: |
+          python -m pipeline.ingest --offline --latest 2026-07 --months-back 3
+          python -c "import json; r = json.load(open('logs/last_run.json')); assert r['status'] == 'no_new_data', r; print('idempotent: ok')"
+
+      - name: Unit + database tests
+        run: pytest -q
+
+      - name: dbt build (models + all data tests)
+        working-directory: dbt
+        run: dbt build --profiles-dir .
+
+      - name: dbt incremental run (second build must also pass)
+        working-directory: dbt
+        run: dbt build --profiles-dir . --select fct_flights+
+
+      - name: Export marts
+        run: python -m pipeline.export --synthetic --sample-rows 20000
+
+      - name: Run the statistics notebook top to bottom
+        run: jupyter nbconvert --to notebook --execute analysis/01_statistical_analysis.ipynb --output /tmp/executed.ipynb
+
+      - name: Scorecard sensitivity script
+        run: python analysis/scorecard_sensitivity.py
+
+      - name: Smoke-test every dashboard page
+        run: pytest -q tests/test_app_smoke.py

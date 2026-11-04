@@ -1,0 +1,6 @@
+# Streamlit Community Cloud installs this file (it looks next to the app first),
+# so the public app gets only what it needs - not dbt or the pipeline packages.
+streamlit>=1.50,<2
+altair>=5,<6
+pandas>=2.2,<3.1
+pyarrow>=16,<22

@@ -1,0 +1,30 @@
+# Secrets - never commit
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Data: raw downloads and local caches stay off GitHub (S3 or the Actions cache holds them)
+data/cache/
+data/landing/
+data/archive/
+data/analysis/
+data/tableau/
+logs/
+
+# Only the small dashboard extracts in data/marts/ are committed
+
+# dbt
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+dbt/.user.yml
+
+# OS / editors
+.DS_Store
+.vscode/

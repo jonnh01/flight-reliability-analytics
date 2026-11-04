@@ -1,0 +1,46 @@
+name: flight_reliability
+version: "1.0.0"
+config-version: 2
+profile: flight_reliability
+
+model-paths: ["models"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  # "On time" = arrived less than this many minutes late (the U.S. DOT standard).
+  on_time_threshold_min: 15
+  # Airports ranked in the top N by departures are flagged as hubs.
+  hub_top_n: 30
+  # Reliability scorecard settings - see docs/metric_definitions.md
+  scorecard_months: 12          # trailing window the scorecard covers
+  scorecard_min_flights: 100    # carrier-airport pairs below this are not ranked
+  scorecard_prior_flights: 300  # shrinkage strength: how many "average" flights to blend in
+  scorecard_priority_n: 20      # size of the priority list for operations
+  weight_on_time: 0.40
+  weight_cancel: 0.20
+  weight_delay: 0.25
+  weight_controllable: 0.15
+
+models:
+  flight_reliability:
+    staging:
+      +schema: staging
+      +materialized: view
+    intermediate:
+      +schema: intermediate
+      +materialized: view
+    marts:
+      +schema: marts
+      +materialized: table
+
+seeds:
+  flight_reliability:
+    +schema: reference
+
+tests:
+  flight_reliability:
+    +store_failures: false
