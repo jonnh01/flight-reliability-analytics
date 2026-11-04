@@ -1,0 +1,21 @@
+{
+  "generated_at": "2026-11-04T20:00:42+00:00",
+  "synthetic_data": false,
+  "tables": {
+    "mart_carrier_monthly": 36,
+    "mart_airport_monthly": 1055,
+    "mart_route_performance": 6241,
+    "mart_delay_causes": 4247,
+    "mart_delay_by_hour": 71,
+    "mart_delay_propagation": 311,
+    "mart_reliability_scorecard": 1226,
+    "mart_whatif_delayed_flights": 159636,
+    "mart_pipeline_status": 1,
+    "dim_carrier": 12,
+    "dim_airport": 353
+  },
+  "latest_month": 202608,
+  "first_month": 202606,
+  "total_flights": 1847936,
+  "analysis_sample_rows": 500072
+}
