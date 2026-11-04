@@ -1,0 +1,27 @@
+version: 2
+
+sources:
+  - name: raw
+    description: Tables written by the Python loader (pipeline/ingest.py). Never edited by dbt.
+    schema: raw
+    tables:
+      - name: bts_flights
+        description: >
+          BTS Reporting Carrier On-Time Performance, one row per scheduled flight, every
+          column stored as text exactly as published. Plus _-prefixed load metadata.
+        loaded_at_field: "to_date(_year_month::text || '01', 'YYYYMMDD')::timestamp"
+        freshness:
+          # BTS publishes about 2 months after a month ends, so the newest flight month is
+          # normally 2-3 months old. Warn at 4 months, fail at 6.
+          warn_after: {count: 120, period: day}
+          error_after: {count: 180, period: day}
+        columns:
+          - name: _year_month
+            tests: [not_null]
+      - name: load_log
+        description: One row per month currently loaded, with the source file checksum.
+        columns:
+          - name: year_month
+            tests: [unique, not_null]
+      - name: pipeline_runs
+        description: One row per loader run - the monitoring history.

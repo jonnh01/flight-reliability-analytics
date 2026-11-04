@@ -1,0 +1,35 @@
+version: 2
+
+models:
+  - name: stg_bts__flights
+    description: Typed, renamed BTS flights. Grain - one row per raw row (one scheduled flight).
+    columns:
+      - name: flight_id
+        description: md5 of flight date, carrier, flight number, origin, destination, scheduled departure.
+        tests: [not_null]
+      - name: flight_date
+        description: Parsed from either BTS date format. Null here means an unparseable date.
+        tests: [not_null]
+      - name: carrier_code
+        tests: [not_null]
+      - name: origin_airport_code
+        tests: [not_null]
+      - name: dest_airport_code
+        tests: [not_null]
+      - name: crs_dep_minutes
+        description: Scheduled departure, minutes after local midnight (0-1440).
+        tests:
+          - not_null
+          - value_between: {min_value: 0, max_value: 1440}
+      - name: cancellation_code
+        description: A = carrier, B = weather, C = National Air System, D = security.
+        tests:
+          - accepted_values:
+              values: ["A", "B", "C", "D"]
+      - name: arr_delay_min
+        description: Minutes late at arrival (negative = early). Null for cancelled/diverted flights.
+        tests:
+          - value_between:
+              min_value: -240
+              max_value: 4000
+              config: {severity: warn}

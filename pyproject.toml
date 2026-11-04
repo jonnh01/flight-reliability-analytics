@@ -1,0 +1,11 @@
+[tool.ruff]
+line-length = 130
+target-version = "py311"
+extend-exclude = ["*.ipynb", "dbt"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

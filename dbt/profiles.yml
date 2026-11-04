@@ -1,0 +1,16 @@
+# Connection settings come from the same environment variables as the Python loader,
+# so there is one place (.env) to configure. Run dbt from this folder with:
+#   dbt build --profiles-dir .
+flight_reliability:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('PGHOST', 'localhost') }}"
+      port: "{{ env_var('PGPORT', '5432') | as_number }}"
+      dbname: "{{ env_var('PGDATABASE', 'flights') }}"
+      user: "{{ env_var('PGUSER', 'postgres') }}"
+      password: "{{ env_var('PGPASSWORD', '') }}"
+      schema: analytics
+      threads: 4
+      connect_timeout: 10

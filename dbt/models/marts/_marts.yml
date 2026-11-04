@@ -1,0 +1,137 @@
+version: 2
+
+models:
+  # ---------------- core star schema ----------------
+  - name: fct_flights
+    description: >
+      Fact table. Grain: one row per scheduled flight, including cancelled and diverted
+      flights. Incremental by year_month (delete+insert).
+    columns:
+      - name: flight_id
+        description: Surrogate key (md5 of the flight's natural identity).
+        tests: [unique, not_null]
+      - name: year_month
+        tests: [not_null]
+      - name: flight_date
+        tests:
+          - not_null
+          - relationships: {to: ref('dim_date'), field: date_day}
+      - name: carrier_code
+        tests:
+          - not_null
+          - relationships: {to: ref('dim_carrier'), field: carrier_code}
+      - name: origin_airport_code
+        tests:
+          - not_null
+          - relationships: {to: ref('dim_airport'), field: airport_code}
+      - name: dest_airport_code
+        tests:
+          - not_null
+          - relationships: {to: ref('dim_airport'), field: airport_code}
+      - name: route_key
+        tests:
+          - not_null
+          - relationships: {to: ref('dim_route'), field: route_key}
+      - name: time_of_day
+        tests:
+          - accepted_values: {values: ["morning", "afternoon", "evening", "night"]}
+      - name: dep_hour
+        tests:
+          - value_between: {min_value: 0, max_value: 23}
+      - name: is_on_time
+        description: Completed and arrived < 15 min late. Cancelled/diverted count as not on time.
+        tests: [not_null]
+      - name: cancellation_code
+        tests:
+          - accepted_values: {values: ["A", "B", "C", "D"]}
+      - name: is_rotation_consistent
+        description: >
+          True when the aircraft's previous leg landed where this flight departs. Null for
+          the first leg of the day. False rows point to tail-number data issues.
+
+  - name: dim_date
+    description: One row per calendar day in the loaded range.
+    columns:
+      - name: date_day
+        tests: [unique, not_null]
+
+  - name: dim_carrier
+    description: One row per airline code seen in the data.
+    columns:
+      - name: carrier_code
+        tests: [unique, not_null]
+
+  - name: dim_airport
+    description: One row per airport; is_hub = top `hub_top_n` airports by departures.
+    columns:
+      - name: airport_code
+        tests: [unique, not_null]
+
+  - name: dim_route
+    description: One row per directional origin-destination pair.
+    columns:
+      - name: route_key
+        tests: [unique, not_null]
+
+  # ---------------- reporting marts ----------------
+  - name: mart_carrier_monthly
+    description: Carrier x month KPIs.
+    tests:
+      - has_min_rows: {min_rows: 1}
+    columns:
+      - name: on_time_rate
+        tests:
+          - not_null
+          - value_between: {min_value: 0, max_value: 1}
+      - name: cancellation_rate
+        tests:
+          - value_between: {min_value: 0, max_value: 1}
+
+  - name: mart_airport_monthly
+    description: Origin airport x month KPIs.
+    columns:
+      - name: on_time_rate
+        tests:
+          - value_between: {min_value: 0, max_value: 1}
+
+  - name: mart_route_performance
+    description: Route reliability over the loaded window, with month-to-month persistence.
+    columns:
+      - name: route_key
+        tests: [unique, not_null]
+
+  - name: mart_delay_causes
+    description: Delay minutes by BTS cause, carrier x origin airport x month.
+
+  - name: mart_delay_by_hour
+    description: Network delay profile by scheduled departure hour and month.
+
+  - name: mart_delay_propagation
+    description: Delay rate given the same aircraft's previous-leg delay (cascade analysis).
+    columns:
+      - name: delay_15_rate
+        tests:
+          - value_between: {min_value: 0, max_value: 1}
+
+  - name: mart_reliability_scorecard
+    description: Volume-adjusted carrier x airport reliability ranking. Rank 1 = least reliable.
+    tests:
+      - has_min_rows: {min_rows: 1}
+    columns:
+      - name: adj_on_time_rate
+        tests:
+          - not_null
+          - value_between: {min_value: 0, max_value: 1}
+      - name: flights
+        tests:
+          - value_between: {min_value: 1, max_value: 100000000}
+      - name: risk_rank
+        tests: [not_null]
+
+  - name: mart_whatif_delayed_flights
+    description: Latest month's 15+ minute delays with cause minutes, for the what-if page.
+
+  - name: mart_pipeline_status
+    description: One-row freshness summary shown on the dashboard.
+    tests:
+      - has_min_rows: {min_rows: 1}

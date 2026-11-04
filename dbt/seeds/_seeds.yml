@@ -1,0 +1,20 @@
+version: 2
+
+seeds:
+  - name: carriers
+    description: >
+      Airline code -> name lookup. Codes missing here still load (named "Unknown carrier (XX)");
+      add them here when BTS starts reporting a new carrier.
+    config:
+      column_types: {carrier_code: text, carrier_name: text, carrier_type: text}
+    columns:
+      - name: carrier_code
+        tests: [unique, not_null]
+
+  - name: us_federal_holidays
+    description: U.S. federal holidays on their actual calendar dates (not the observed weekday).
+    config:
+      column_types: {holiday_date: date, holiday_name: text}
+    columns:
+      - name: holiday_date
+        tests: [unique, not_null]

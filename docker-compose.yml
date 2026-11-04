@@ -1,0 +1,50 @@
+# Run the whole project with one command, no local Python or Postgres needed:
+#
+#   docker compose up -d db                 # start Postgres
+#   docker compose run --rm pipeline        # ingest -> dbt build -> export
+#   docker compose up app                   # dashboard at http://localhost:8501
+#
+# Reads settings from .env (copy .env.example first). Inside Docker the database host
+# is the "db" service, so PGHOST is overridden below.
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${PGDATABASE:-flights}
+      POSTGRES_USER: ${PGUSER:-postgres}
+      POSTGRES_PASSWORD: ${PGPASSWORD:-postgres}
+    ports:
+      - "5433:5432"   # 5433 on your Mac, so it does not clash with Postgres.app on 5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-postgres} -d ${PGDATABASE:-flights}"]
+      interval: 5s
+      retries: 10
+
+  pipeline:
+    build: .
+    env_file: .env
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      PGPASSWORD: ${PGPASSWORD:-postgres}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data       # raw files, archive and exported marts stay on your Mac
+      - ./logs:/app/logs
+      - ./docs:/app/docs
+
+  app:
+    build: .
+    command: ["streamlit", "run", "app/streamlit_app.py", "--server.address=0.0.0.0"]
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+
+volumes:
+  pgdata:
