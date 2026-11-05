@@ -12,7 +12,11 @@ on:
     inputs:
       months_back:
         description: "Months of history to keep"
-        default: "24"
+        default: "12"
+      run_analysis:
+        description: "Also run query benchmarks, scorecard sensitivity and the notebook on the real data"
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # commit refreshed data/marts files
@@ -42,7 +46,7 @@ jobs:
       PGDATABASE: flights
       PGUSER: postgres
       PGPASSWORD: postgres
-      MONTHS_BACK: ${{ inputs.months_back || vars.MONTHS_BACK || '24' }}
+      MONTHS_BACK: ${{ inputs.months_back || vars.MONTHS_BACK || '12' }}
       # Optional S3 archive: add these as repository secrets/variables to turn it on
       S3_BUCKET: ${{ vars.S3_BUCKET }}
       AWS_REGION: ${{ vars.AWS_REGION || 'us-west-2' }}
@@ -87,6 +91,25 @@ jobs:
       - name: Export dashboard files
         run: python -m pipeline.export
 
+      - name: Data sanity summary (shown on the run page)
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          import pandas as pd
+          c = pd.read_parquet("data/marts/mart_carrier_monthly.parquet")
+          m = c.groupby("year_month")[["scheduled_flights", "completed_flights", "on_time_flights",
+                                       "cancelled_flights", "delayed_15_flights"]].sum()
+          print("### Data sanity check\n")
+          print("| Month | Scheduled flights | On-time % (all scheduled) | On-time % (completed only, BTS style) | Cancelled % |")
+          print("|---|---:|---:|---:|---:|")
+          for ym, r in m.iterrows():
+              print(f"| {ym} | {r.scheduled_flights:,} | {100 * r.on_time_flights / r.scheduled_flights:.1f} "
+                    f"| {100 * (1 - r.delayed_15_flights / r.completed_flights):.1f} "
+                    f"| {100 * r.cancelled_flights / r.scheduled_flights:.2f} |")
+          print(f"\nManifest: `{json.dumps({k: v for k, v in json.load(open('data/marts/manifest.json')).items() if k != 'tables'})}`")
+          PY
+          df -h /
+
       - name: Publish (commit refreshed marts)
         run: |
           git config user.name "github-actions[bot]"
@@ -100,6 +123,35 @@ jobs:
             echo "Published refreshed dashboard data." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      - name: Query benchmarks on the real data (optional)
+        if: inputs.run_analysis
+        run: python analysis/benchmarks/run_benchmarks.py --runs 5
+
+      - name: Scorecard sensitivity on the real data (optional)
+        if: inputs.run_analysis
+        run: python analysis/scorecard_sensitivity.py
+
+      - name: Statistics notebook on the real data (optional, saved as a run artifact)
+        if: inputs.run_analysis
+        continue-on-error: true
+        run: |
+          mkdir -p notebook-output
+          jupyter nbconvert --to notebook --execute analysis/01_statistical_analysis.ipynb \
+            --ExecutePreprocessor.timeout=1200 --output-dir notebook-output
+
+      - name: Publish analysis reports (optional)
+        if: inputs.run_analysis
+        run: |
+          git add docs/benchmarks.md docs/scorecard_sensitivity.md
+          if git diff --cached --quiet; then
+            echo "Analysis reports unchanged." >> "$GITHUB_STEP_SUMMARY"
+          else
+            git commit -m "docs: benchmarks + scorecard sensitivity on real data ($MONTHS_BACK months)"
+            git pull --rebase
+            git push
+            echo "Published docs/benchmarks.md and docs/scorecard_sensitivity.md." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -108,6 +160,7 @@ jobs:
           path: |
             logs/
             dbt/target/run_results.json
+            notebook-output/
           retention-days: 30
 
       - name: Open an issue on failure
