@@ -10,7 +10,7 @@ Every metric is defined once, in `dbt/models/intermediate/int_flights__enriched.
 | `is_diverted` | BTS `Diverted = 1` |
 | `is_completed` | not cancelled and not diverted |
 | `is_arr_delayed_15` | BTS `ArrDel15 = 1` (arrived 15+ minutes late). Null for cancelled/diverted flights |
-| `is_on_time` | completed **and** arrival delay < 15 minutes. Cancelled and diverted flights count as **not** on time |
+| `is_on_time` | completed **and** arrival delay < 15 minutes. Cancelled and diverted flights count as **not** on time. A completed flight whose arrival delay BTS left blank uses BTS's 15-minute flag, and counts as not on time if that is blank too (`tests/assert_completed_flights_have_arrival_delay.sql` keeps count) |
 | `is_significant_delay` | arrival delay of 60+ minutes |
 | `airline_controllable_delay_min` | `CarrierDelay + LateAircraftDelay` minutes (flights 15+ late only) |
 | `total_cause_delay_min` | sum of all five cause columns (flights 15+ late only) |
