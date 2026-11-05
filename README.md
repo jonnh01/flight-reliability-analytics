@@ -2,18 +2,6 @@
 
 **An automated pipeline over U.S. domestic flights (BTS on-time data) that scores airline and airport reliability, traces where delays come from, and publishes a live dashboard that refreshes monthly.**
 
-> 🔗 **Live app:** _add Streamlit link_ · **Tableau:** _add Tableau Public link_
->
-> _Add one dashboard screenshot here (`docs/img/overview.png`)._
-
-## Key findings
-
-_Fill in from your verified results (`analysis/01_statistical_analysis.ipynb`, `docs/scorecard_sensitivity.md`). Every number must come from the real data._
-
-1. _Finding 1 with a number and effect size_
-2. _Finding 2_
-3. _Finding 3_
-
 ## What it does
 
 | Question | Where it is answered |
@@ -56,10 +44,6 @@ Definitions: [docs/metric_definitions.md](docs/metric_definitions.md) · Columns
 ## Data quality
 
 dbt tests on every build: unique and not-null keys, fact-to-dimension relationships, accepted values, value ranges, **row-count reconciliation** (raw = fact = load log for every month), delay causes summing to arrival delay, no gaps in the month sequence, and source freshness. The monthly job publishes nothing if any test fails.
-
-## Performance
-
-_Run `make benchmark` on the full dataset, then summarise [docs/benchmarks.md](docs/benchmarks.md) here (measured before/after times)._
 
 ## Run it yourself
 
