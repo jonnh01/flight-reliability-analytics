@@ -15,4 +15,7 @@
 | 2026-11-04 | S3 as an optional raw archive | Required S3; no archive | GitHub runners have no persistent storage; optional keeps local development unblocked |
 | 2026-11-04 | Streamlit reads Parquet extracts | Hosted database | Free hosting, nothing to secure, fast |
 | 2026-11-04 | Excel workbook dropped from v2 scope | Keep it | Time goes to Priority 1-3 items; can return later |
+| 2026-11-05 | Keep 12 months of history (`months_back` default 12) | 24 months | Jon's call. 12 months already covers the scorecard's trailing-12-month window |
+| 2026-11-05 | A completed flight with a blank arrival delay uses BTS's ArrDel15 flag, else counts as not on time; a warning test counts these flights | Drop the row; let the build fail | Found by the first 12-month run (1 flight in 7,049,869). Keeps raw = fact reconciliation intact and keeps the issue visible |
+| 2026-11-05 | Benchmarks, sensitivity and the notebook run inside the Monthly refresh workflow (optional `run_analysis`) | Run them on a laptop | Same real data the app shows, a named machine, and the reports are committed automatically |
 | | _your next decision_ | | |
