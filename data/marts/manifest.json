@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-05T18:23:38+00:00",
+  "generated_at": "2026-11-05T18:35:51+00:00",
   "synthetic_data": false,
   "tables": {
     "mart_carrier_monthly": 157,
@@ -17,5 +17,5 @@
   "latest_month": 202608,
   "first_month": 202509,
   "total_flights": 7049869,
-  "analysis_sample_rows": 500052
+  "analysis_sample_rows": 498667
 }
