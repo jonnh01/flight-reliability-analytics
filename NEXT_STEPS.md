@@ -2,20 +2,20 @@
 
 The AI-assisted code is written. This file lists **what only you can do**, in order. Tick each box as you go. Times are rough.
 
-## What has and hasn't been tested yet
+## What has and hasn't been tested yet (updated 2026-11-05)
 
-Claude couldn't install packages or reach the BTS website from its workspace, so testing was partial:
+Everything except S3, Docker and your own Mac has now run for real, in GitHub Actions on real BTS data:
 
 | Part | Tested? |
 |---|---|
-| All dbt SQL (staging, star schema, incremental loads, every mart, all data tests) | ✅ Ran against a real PostgreSQL 16 on synthetic data. Every test passed, including a reload and a pruned month |
-| BTS file reading, column checks, archive logic, what-if math (pytest) | ✅ 22 unit tests pass |
-| Stats notebook sections 1–3, scorecard sensitivity script | ✅ Ran on the synthetic marts |
-| All 5 dashboard pages | ✅ Ran top to bottom with Streamlit stubbed out (logic only, not the visuals) |
-| The Python ↔ Postgres loader (`pipeline/db.py`), dbt itself, Streamlit itself, the regression cell | ⚠️ **Not run yet** (packages unavailable). Your first local run and the GitHub CI run are the real test |
-| Real BTS data, S3, Docker, GitHub Actions | ⚠️ Not run. These need your accounts and your machine |
-
-So expect to fix a few small things on the first run. That's normal, and you'll learn the code doing it.
+| CI on every push (synthetic data): lint, ingest + idempotency, 31 pytest tests, dbt build twice, export, notebook, sensitivity, app | ✅ Green |
+| Real BTS downloads from GitHub's servers | ✅ Work. The S3 fallback is not needed |
+| `pipeline/db.py` loader, dbt, export on real data | ✅ Monthly refresh with 3 months, then 12 months (7,049,869 flights). All 60 dbt data tests pass (3 warnings) |
+| Statistics notebook incl. the regression | ✅ Ran top to bottom on the real 12-month sample (saved as a run artifact) |
+| Streamlit pages | ✅ All 6 AppTest page tests pass against the real 12-month files. **Not yet looked at in a browser** |
+| Benchmarks, scorecard sensitivity | ✅ Real results in `docs/benchmarks.md` and `docs/scorecard_sensitivity.md` |
+| First real-data bug | Fixed: 1 completed flight had a blank arrival delay, which made `is_on_time` null and failed a test. The failed run published nothing (the guard worked) |
+| S3, Docker, running on your Mac | ⚠️ Not run |
 
 ---
 
@@ -76,11 +76,9 @@ So expect to fix a few small things on the first run. That's normal, and you'll 
 
 ## Phase 4: Scale up + analysis (≈4–6 h)
 
-- [ ] `MONTHS_BACK=12`, ingest, `make dbt-build`. Note how long each step takes.
-- [ ] `MONTHS_BACK=24` if your laptop copes (expect roughly 13–14M rows; check the real number).
+- [x] 12 months loaded and tested by the Monthly refresh workflow (7,049,869 rows). Decision: stay at 12, not 24.
 - [ ] `make export` (real data, no `--synthetic`).
-- [ ] `make benchmark` → read `docs/benchmarks.md`. These are your real before/after numbers.
-- [ ] `make sensitivity` → read `docs/scorecard_sensitivity.md`.
+- [x] Benchmarks and sensitivity ran on the real data (Monthly refresh with *run_analysis* ticked). Read `docs/benchmarks.md` and `docs/scorecard_sensitivity.md` until you can explain every number.
 - [ ] Run the notebook (`jupyter notebook analysis/01_statistical_analysis.ipynb`, Restart & Run All). Write the findings section yourself.
 - [ ] Write `docs/case_study.md` about one real problem the data shows.
 - [ ] Add 2–4 findings to `FINDINGS` in `app/views/findings.py`.
@@ -97,15 +95,15 @@ So expect to fix a few small things on the first run. That's normal, and you'll 
 
 ## Phase 7: Go live (≈1 h)
 
-- [ ] Commit and push the real `data/marts/` files.
+- [x] Real `data/marts/` files are committed (the Monthly refresh workflow does this).
 - [ ] **share.streamlit.io** → sign in with GitHub → *Create app* → your repo, branch `main`, file `app/streamlit_app.py` → Deploy.
 - [ ] Open the public link in a private browser window. Check every page.
 - [ ] **Put the link on your resume and LinkedIn now.** Don't wait for the rest.
 
 ## Phase 8: Automation (≈1–2 h)
 
-- [ ] GitHub → Actions → **Monthly refresh** → *Run workflow* with `months_back = 3` first. It must go green and commit fresh `data/marts`.
-- [ ] Then run it with `24`. Check its run time. If it fails on disk or time, set repository variable `MONTHS_BACK` to `12`.
+- [x] Monthly refresh with `months_back = 3`: green, committed real `data/marts`.
+- [x] Monthly refresh with `months_back = 12` (the new default): green after one fix.
 - [ ] Do the four failure tests at the bottom of `docs/runbook.md`.
 - [ ] Only after these pass may you say "automated monthly refresh" anywhere.
 
