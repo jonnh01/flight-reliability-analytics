@@ -1,6 +1,6 @@
 # Next steps: your manual checklist
 
-The AI-assisted code is written. This file lists **what only you can do**, in order. Tick each box as you go. Times are rough.
+The code is written. This file lists **what only you can do**, in order. Tick each box as you go. Times are rough.
 
 ## What has and hasn't been tested yet (updated 2026-11-13)
 
@@ -55,7 +55,7 @@ Everything except S3 and your own Mac has now run for real, in GitHub Actions on
   make test
   make app                     # opens http://localhost:8501 with a red "synthetic" banner
   ```
-  If anything errors, paste the error to Claude and fix it before moving on.
+  If anything errors, read the error message and fix it before moving on.
 - [ ] **Wipe the synthetic data** so it never mixes with real data:
   ```bash
   make reset-db
@@ -75,7 +75,7 @@ Everything except S3 and your own Mac has now run for real, in GitHub Actions on
 
 ## Phase 3: GitHub (≈30 min)
 
-- [x] Repo created and pushed by Claude: https://github.com/jonnh01/flight-reliability-analytics
+- [x] Repo created and pushed: https://github.com/jonnh01/flight-reliability-analytics
 - [ ] Before every commit you make: `git status` and check `.env` is NOT listed.
 
 ## Phase 4: Scale up + analysis (≈4–6 h)
