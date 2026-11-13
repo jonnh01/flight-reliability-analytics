@@ -124,8 +124,11 @@ jobs:
           rerun=$(psql -tAc "select count(*) from raw.bts_flights where _year_month = 202607")
           logged=$(psql -tAc "select row_count from raw.load_log where year_month = 202607")
           test "$rerun" = "$logged"
+          # the interrupted run must be recorded as failed, not left as "running"
           stale=$(psql -tAc "select count(*) from raw.pipeline_runs where status = 'running'")
-          echo "- ✅ **Interrupted reload:** Ctrl+C mid-transaction left July unchanged (${before%%|*} rows); rerun reloaded $rerun rows and reconciled. Note: the interrupted run stays marked \`running\` in raw.pipeline_runs ($stale row)" >> "$GITHUB_STEP_SUMMARY"
+          test "$stale" = "0"
+          psql -tAc "select error_message from raw.pipeline_runs where error_message like 'KeyboardInterrupt%'" | grep -q KeyboardInterrupt
+          echo "- ✅ **Interrupted reload:** Ctrl+C mid-transaction left July unchanged (${before%%|*} rows) and the run was recorded as \`failed\` (KeyboardInterrupt); rerun reloaded $rerun rows and reconciled" >> "$GITHUB_STEP_SUMMARY"
 
       - name: "Drill 4: a failing dbt test blocks publishing"
         run: |
