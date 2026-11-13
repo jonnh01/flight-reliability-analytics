@@ -1,0 +1,143 @@
+# Failure drills: proves the pipeline fails SAFELY. Runs the four checks from docs/runbook.md
+# ("Testing failure handling on purpose") on synthetic data, so it never depends on BTS.
+#
+#   1. Rerun is harmless          - loading the same files twice changes nothing
+#   2. Bad file                   - a file with a missing column is rejected, old data untouched
+#   3. Interrupted load           - a reload stopped mid-transaction leaves the old month intact
+#   4. Failing test blocks publish - when a dbt test fails, the export never runs
+name: Failure drills
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "pipeline/**"
+      - "dbt/**"
+      - "Makefile"
+      - ".github/workflows/failure_drills.yml"
+
+jobs:
+  drills:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: flights
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGDATABASE: flights
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      MONTHS_BACK: "3"
+      MONTH_COUNTS: "select _year_month, count(*) from raw.bts_flights group by 1 order by 1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Set up - load 3 synthetic months
+        run: |
+          python scripts/make_sample_data.py --start 2026-05 --end 2026-07 --rows 15000
+          python -m pipeline.ingest --offline --latest 2026-07 --months-back 3
+          psql -c "$MONTH_COUNTS"
+
+      - name: "Drill 1: rerun is harmless"
+        run: |
+          before=$(psql -tAc "$MONTH_COUNTS")
+          python -m pipeline.ingest --offline --latest 2026-07 --months-back 3
+          after=$(psql -tAc "$MONTH_COUNTS")
+          status=$(python -c "import json; print(json.load(open('logs/last_run.json'))['status'])")
+          test "$status" = "no_new_data"
+          test "$before" = "$after"
+          echo "- ✅ **Rerun is harmless:** second run reported \`$status\`, row counts unchanged" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: "Drill 2: a bad file is rejected and old data is untouched"
+        run: |
+          # make a copy of July with the ArrDelay column removed, saved as August
+          python - <<'PY'
+          import io, zipfile
+          import pandas as pd
+          from pipeline.bts import YearMonth, zip_filename
+          src = f"data/landing/{zip_filename(YearMonth(2026, 7))}"
+          with zipfile.ZipFile(src) as zf:
+              name = [n for n in zf.namelist() if n.endswith(".csv")][0]
+              frame = pd.read_csv(zf.open(name), dtype=str, keep_default_na=False)
+          frame = frame.drop(columns=["ArrDelay"])
+          with zipfile.ZipFile(f"data/landing/{zip_filename(YearMonth(2026, 8))}", "w", zipfile.ZIP_DEFLATED) as zf:
+              zf.writestr("bad_2026_8.csv", frame.to_csv(index=False))
+          PY
+          before=$(psql -tAc "$MONTH_COUNTS")
+          if python -m pipeline.ingest --offline --month 2026-08; then
+            echo "expected the bad file to be rejected"; exit 1
+          fi
+          after=$(psql -tAc "$MONTH_COUNTS")
+          test "$before" = "$after"
+          error=$(python -c "import json; print(json.load(open('logs/last_run.json'))['error'])")
+          echo "$error" | grep -q SourceSchemaError
+          last=$(psql -tAc "select status from raw.pipeline_runs order by started_at desc limit 1")
+          test "$last" = "failed"
+          echo "- ✅ **Bad file rejected:** \`${error:0:120}…\`; run recorded as \`$last\`; existing months unchanged" >> "$GITHUB_STEP_SUMMARY"
+          rm data/landing/*_2026_8.zip
+
+      - name: "Drill 3: an interrupted reload leaves the old month intact"
+        run: |
+          before=$(psql -tAc "select count(*), max(source_sha256) from raw.bts_flights b join raw.load_log l on l.year_month = b._year_month where _year_month = 202607")
+          # job control on, so background jobs still receive Ctrl+C (SIGINT) like a terminal would
+          set -m
+          # Hold a SHARE lock on the raw table: reads still work, but the reload's DELETE has to
+          # wait, so its transaction is open (and nothing is committed) when we interrupt it
+          psql -c "begin; lock table raw.bts_flights in share mode; select pg_sleep(60); commit;" &
+          sleep 2
+          python -m pipeline.ingest --offline --month 2026-07 --force &
+          ingest_pid=$!
+          # wait until the reload's DELETE is inside its transaction, blocked on the lock
+          waiting=0
+          for _ in $(seq 1 120); do
+            waiting=$(psql -tAc "select count(*) from pg_stat_activity where wait_event_type = 'Lock' and query ilike 'delete from raw.bts_flights%'")
+            [ "$waiting" = "1" ] && break
+            sleep 0.5
+          done
+          test "$waiting" = "1"
+          kill -INT "$ingest_pid"        # the same signal as pressing Ctrl+C
+          wait "$ingest_pid" && { echo "expected the interrupted run to fail"; exit 1; } || true
+          # release the lock
+          psql -tAc "select pg_terminate_backend(pid) from pg_stat_activity where query ilike '%pg_sleep(60)%' and pid <> pg_backend_pid()" > /dev/null
+          sleep 2
+          after=$(psql -tAc "select count(*), max(source_sha256) from raw.bts_flights b join raw.load_log l on l.year_month = b._year_month where _year_month = 202607")
+          test "$before" = "$after"
+          # a clean rerun then reloads the month and reconciles
+          python -m pipeline.ingest --offline --month 2026-07 --force
+          rerun=$(psql -tAc "select count(*) from raw.bts_flights where _year_month = 202607")
+          logged=$(psql -tAc "select row_count from raw.load_log where year_month = 202607")
+          test "$rerun" = "$logged"
+          stale=$(psql -tAc "select count(*) from raw.pipeline_runs where status = 'running'")
+          echo "- ✅ **Interrupted reload:** Ctrl+C mid-transaction left July unchanged (${before%%|*} rows); rerun reloaded $rerun rows and reconciled. Note: the interrupted run stays marked \`running\` in raw.pipeline_runs ($stale row)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: "Drill 4: a failing dbt test blocks publishing"
+        run: |
+          make dbt-build
+          python -m pipeline.export --synthetic
+          before=$(sha256sum data/marts/manifest.json)
+          # break one test on purpose: a mart can never have a billion rows
+          sed -i '0,/has_min_rows: {min_rows: 1}/s//has_min_rows: {min_rows: 999999999}/' dbt/models/marts/_marts.yml
+          if make dbt-build export; then
+            echo "expected dbt build to fail and stop make before export"; exit 1
+          fi
+          after=$(sha256sum data/marts/manifest.json)
+          test "$before" = "$after"
+          git checkout -- dbt/models/marts/_marts.yml
+          echo "- ✅ **Failing test blocks publishing:** dbt build failed, \`make\` stopped, and the exported files were not touched" >> "$GITHUB_STEP_SUMMARY"
