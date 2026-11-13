@@ -193,8 +193,10 @@ def run(args) -> RunResult:
             result.status = "success" if result.months_loaded else "no_new_data"
             db.finish_run(conn, run_id, result.status, [YearMonth.parse(m) for m in result.months_loaded],
                           [YearMonth.parse(m) for m in result.months_skipped], result.rows_loaded)
-        except Exception as exc:  # record the failure, then re-raise for a non-zero exit
-            result.status, result.error = "failed", f"{type(exc).__name__}: {exc}"
+        except BaseException as exc:  # record the failure (Ctrl+C too), then re-raise for a non-zero exit
+            # BaseException, not Exception, so an interrupted run (KeyboardInterrupt) is recorded as
+            # failed instead of being left as "running" forever in raw.pipeline_runs
+            result.status, result.error = "failed", f"{type(exc).__name__}: {str(exc) or 'interrupted'}"
             log.exception("ingestion failed")
             try:
                 db.finish_run(conn, run_id, "failed", [YearMonth.parse(m) for m in result.months_loaded],
