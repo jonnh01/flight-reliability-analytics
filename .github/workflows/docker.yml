@@ -1,0 +1,58 @@
+# Docker check: builds the images and runs the documented Docker commands end to end on
+# GitHub's servers, with real BTS data (1 month to keep it quick):
+#   docker compose up -d db  ->  docker compose run --rm pipeline  ->  docker compose up app
+name: Docker
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "Dockerfile"
+      - "docker-compose.yml"
+      - ".dockerignore"
+      - "requirements.txt"
+      - ".github/workflows/docker.yml"
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env from the example (as a new user would)
+        run: |
+          cp .env.example .env
+          sed -i 's/^PGUSER=.*/PGUSER=postgres/; s/^PGPASSWORD=.*/PGPASSWORD=postgres/; s/^MONTHS_BACK=.*/MONTHS_BACK=1/' .env
+
+      - name: Build the images
+        run: docker compose build
+
+      - name: "docker compose up -d db"
+        run: docker compose up -d --wait db
+
+      - name: "docker compose run --rm pipeline (ingest -> dbt build -> export)"
+        run: docker compose run --rm pipeline
+
+      - name: Check the export
+        run: |
+          python3 -c "import json; m = json.load(open('data/marts/manifest.json')); print(m); assert not m['synthetic_data'] and m['total_flights'] > 0"
+          echo "Docker pipeline exported $(python3 -c "import json; print(f\"{json.load(open('data/marts/manifest.json'))['total_flights']:,}\")") real flights" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: "docker compose up app (dashboard answers on port 8501)"
+        run: |
+          docker compose up -d app
+          for _ in $(seq 1 60); do
+            curl -fs http://localhost:8501/_stcore/health && break
+            sleep 2
+          done
+          curl -fs http://localhost:8501/_stcore/health
+          echo "Streamlit container healthy on http://localhost:8501" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Container logs (on failure)
+        if: failure()
+        run: docker compose logs --tail 200
+
+      - name: Clean up
+        if: always()
+        run: docker compose down -v
