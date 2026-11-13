@@ -2,6 +2,17 @@
 
 **An automated pipeline over U.S. domestic flights (BTS on-time data) that scores airline and airport reliability, traces where delays come from, and publishes a live dashboard that refreshes monthly.**
 
+## Key findings
+
+From 12 months of real BTS data (Sep 2025 – Aug 2026, 7,049,869 flights). Statistics are in [the notebook](analysis/01_statistical_analysis.ipynb); the case studies are in [docs/case_study.md](docs/case_study.md).
+
+1. **Late planes make late planes.** When an aircraft's previous flight landed 15+ minutes late, 65.9% of its next flights arrived late, against 15.2% after an on-time previous flight. That is a risk ratio of **4.33** (95% CI 4.29–4.37), measured with a `LAG()` window over each aircraft's daily rotation.
+2. **When you fly matters more than which airline you fly.** Evening departures have **2.70×** the odds of a 15+ minute delay compared with morning departures (95% CI 2.66–2.75), holding carrier, month, distance and hub fixed. The airline-vs-on-time association is small (Cramér's V 0.072).
+3. **SFO arrivals collapsed from April 2026.** Flights *into* SFO were on time 82.1% in March, then 48–59% each month from April to August, with air-traffic-system (NAS) causes behind up to 64% of delay minutes. 7 of the 8 biggest carriers there did worse into SFO than on their other arrivals, and the timing matches the FAA's cut in SFO's arrival rate (about 54 → 36 an hour) during runway repaving.
+4. **One regional carrier dominates the priority list.** PSA Airlines (American Eagle) cancels **2.7×** as often as the rest of the network (4.8% vs 1.8%), mostly on weather-coded days, and holds 9 of the reliability scorecard's top 20 carrier-airport pairs.
+
+All of these are associations in observational data. The limits are spelled out next to each one.
+
 ## What it does
 
 | Question | Where it is answered |
@@ -47,16 +58,18 @@ dbt tests on every build: unique and not-null keys, fact-to-dimension relationsh
 
 ## Results on real data
 
-Measured by the GitHub Actions runs on 2026-11-05 over 12 months of BTS data (Sep 2025 – Aug 2026). Nothing below is estimated.
+Measured by the GitHub Actions runs on 2026-11-05 and 2026-11-13 over 12 months of BTS data (Sep 2025 – Aug 2026). Nothing below is estimated.
 
 | | |
 |---|---|
 | Flights loaded | **7,049,869** scheduled flights (515,037 to 631,970 per month), 14 carriers, 360 origin airports |
 | Data tests | 60 dbt data tests on every build: 0 failures, 3 warnings (data-quality flags, below) |
-| Run time on a GitHub runner | ingest 103–149 s from the raw-file cache (401 s on the first 12-month run, which downloaded the months not yet cached); `dbt build` 219–373 s |
+| Run time on a GitHub runner | ingest 103–401 s depending on how many months were already in the raw-file cache; `dbt build` 219–379 s |
 | Monthly on-time rate (all scheduled flights) | 69.4% (Jul 2026) to 82.8% (Sep 2025) |
 | Monthly cancellation rate | 0.51% (Sep 2025) to 4.71% (Jan 2026) |
 | Dashboard | all 6 Streamlit page tests pass against these files in CI |
+| Docker | the documented `docker compose` commands build, load one real month (608,389 flights) and serve the app ([workflow](.github/workflows/docker.yml)) |
+| Failure drills | 4 of 4 pass: rerun is harmless, a bad file is rejected, a reload interrupted mid-transaction leaves the old month intact, a failing test blocks publishing ([workflow](.github/workflows/failure_drills.yml)) |
 
 **Data-quality flags kept visible on purpose:** 1 completed flight with a blank arrival delay (counted as not on time, see [metric definitions](docs/metric_definitions.md)); 148 delayed flights whose five cause columns don't add up to the arrival delay; 2 flights with an arrival delay outside the expected range (−240 to 4,000 minutes). The carrier dimension also shows Hawaiian Airlines (HA) last reporting in Dec 2025 and Spirit (NK) in May 2026.
 
@@ -64,11 +77,11 @@ Measured by the GitHub Actions runs on 2026-11-05 over 12 months of BTS data (Se
 
 | Query | Without index | With index |
 |---|---:|---:|
-| One aircraft's flights on one day (`LAG` rotation) | 359.7 ms (full scan) | 0.007 ms (index scan) |
-| One airport, latest 3 months, by carrier | 265.5 ms | 128.6 ms |
-| One carrier's monthly trend | 278.8 ms | 188.2 ms |
+| One aircraft's flights on one day (`LAG` rotation) | 634.4 ms (full scan) | 0.018 ms (index scan) |
+| One airport, latest 3 months, by carrier | 457.7 ms | 226.9 ms |
+| One carrier's monthly trend | 464.0 ms | 317.8 ms |
 
-Shared GitHub runners are noisy: an earlier run the same day measured 633.1 ms without the index for the aircraft query.
+Shared GitHub runners are noisy. Across three runs, the aircraft query took 360–634 ms without the index and 0.007–0.018 ms with it.
 
 **Scorecard robustness** ([details](docs/scorecard_sensitivity.md)): 1,540 carrier-airport pairs ranked. Re-weighting keeps 6–8 of the top 10 and a Spearman rank correlation of 0.955–0.990 with the baseline. Removing the small-sample adjustment keeps only 4 of the top 10, which is why the adjustment is there.
 
