@@ -66,6 +66,9 @@ jobs:
       - name: Export marts
         run: python -m pipeline.export --synthetic --sample-rows 20000
 
+      - name: Case study queries
+        run: python analysis/case_studies.py
+
       - name: Run the statistics notebook top to bottom
         run: jupyter nbconvert --to notebook --execute analysis/01_statistical_analysis.ipynb --output /tmp/executed.ipynb
 
