@@ -2,20 +2,24 @@
 
 The AI-assisted code is written. This file lists **what only you can do**, in order. Tick each box as you go. Times are rough.
 
-## What has and hasn't been tested yet (updated 2026-11-05)
+## What has and hasn't been tested yet (updated 2026-11-13)
 
-Everything except S3, Docker and your own Mac has now run for real, in GitHub Actions on real BTS data:
+Everything except S3 and your own Mac has now run for real, in GitHub Actions on real BTS data:
 
 | Part | Tested? |
 |---|---|
 | CI on every push (synthetic data): lint, ingest + idempotency, 31 pytest tests, dbt build twice, export, notebook, sensitivity, app | ✅ Green |
 | Real BTS downloads from GitHub's servers | ✅ Work. The S3 fallback is not needed |
 | `pipeline/db.py` loader, dbt, export on real data | ✅ Monthly refresh with 3 months, then 12 months (7,049,869 flights). All 60 dbt data tests pass (3 warnings) |
-| Statistics notebook incl. the regression | ✅ Ran top to bottom on the real 12-month sample (saved as a run artifact) |
+| Statistics notebook incl. the regression | ✅ Ran top to bottom on the real 12-month sample; outputs and a findings section are committed |
+| Case studies (SFO arrivals, PSA Airlines) | ✅ `docs/case_study.md`, every number from `analysis/case_studies.py` (tables in `docs/case_study_data.md`) |
+| Docker | ✅ The `Docker` workflow builds the images, runs `docker compose run --rm pipeline` on 1 real month (608,389 flights) and checks the app container is healthy |
+| Failure drills (runbook) | ✅ The `Failure drills` workflow passes all 4: rerun is harmless, a bad file is rejected, an interrupted reload leaves the old month intact (and is recorded as `failed`), a failing test blocks publishing |
 | Streamlit pages | ✅ All 6 AppTest page tests pass against the real 12-month files. **Not yet looked at in a browser** |
 | Benchmarks, scorecard sensitivity | ✅ Real results in `docs/benchmarks.md` and `docs/scorecard_sensitivity.md` |
 | First real-data bug | Fixed: 1 completed flight had a blank arrival delay, which made `is_on_time` null and failed a test. The failed run published nothing (the guard worked) |
-| S3, Docker, running on your Mac | ⚠️ Not run |
+| Second real-data fix | An interrupted run (Ctrl+C) used to stay `running` forever in `raw.pipeline_runs`; it is now recorded as `failed`, and drill 3 checks it |
+| S3, running on your Mac | ⚠️ Not run (both optional: Actions does the real runs) |
 
 ---
 
@@ -79,9 +83,9 @@ Everything except S3, Docker and your own Mac has now run for real, in GitHub Ac
 - [x] 12 months loaded and tested by the Monthly refresh workflow (7,049,869 rows). Decision: stay at 12, not 24.
 - [ ] `make export` (real data, no `--synthetic`).
 - [x] Benchmarks and sensitivity ran on the real data (Monthly refresh with *run_analysis* ticked). Read `docs/benchmarks.md` and `docs/scorecard_sensitivity.md` until you can explain every number.
-- [ ] Run the notebook (`jupyter notebook analysis/01_statistical_analysis.ipynb`, Restart & Run All). Write the findings section yourself.
-- [ ] Write `docs/case_study.md` about one real problem the data shows.
-- [ ] Add 2–4 findings to `FINDINGS` in `app/views/findings.py`.
+- [x] Notebook ran on the real data (Monthly refresh, *run_analysis*) and the findings section is written from its outputs. **Your part:** read section 5 and re-derive each number from the cells above it.
+- [x] `docs/case_study.md`: two case studies (SFO arrivals, PSA Airlines). **Your part:** read both and be able to tell each story in 2 minutes without notes.
+- [x] 4 findings in `FINDINGS` in `app/views/findings.py`.
 
 ## Phase 5: AWS S3 (optional, ≈1 h)
 
@@ -90,8 +94,8 @@ Everything except S3, Docker and your own Mac has now run for real, in GitHub Ac
 
 ## Phase 6: Docker (≈1 h)
 
-- [ ] Claude couldn't check whether Docker is on your Mac (it can only see the project folder). Open Terminal and run `docker --version`. If it's not found, install **Docker Desktop for Mac** from docker.com (choose Apple chip or Intel to match your Mac) and open it once.
-- [ ] `docker compose up -d db && docker compose run --rm pipeline`, then `docker compose up app`.
+- [x] Proven in GitHub Actions (`Docker` workflow): the documented commands work on a clean machine with real data.
+- [ ] Optional, on your Mac: `docker --version` (install Docker Desktop if missing), then `docker compose up -d db && docker compose run --rm pipeline` and `docker compose up app`.
 
 ## Phase 7: Go live (≈1 h)
 
@@ -104,8 +108,8 @@ Everything except S3, Docker and your own Mac has now run for real, in GitHub Ac
 
 - [x] Monthly refresh with `months_back = 3`: green, committed real `data/marts`.
 - [x] Monthly refresh with `months_back = 12` (the new default): green after one fix.
-- [ ] Do the four failure tests at the bottom of `docs/runbook.md`.
-- [ ] Only after these pass may you say "automated monthly refresh" anywhere.
+- [x] The four failure tests from `docs/runbook.md` run automatically in the `Failure drills` workflow, and all pass. You can now say "automated monthly refresh with tested failure handling".
+- [ ] **Your part:** read `.github/workflows/failure_drills.yml` and be able to explain how drill 3 interrupts a reload mid-transaction.
 
 ## Phase 9: Tableau (≈3–4 h)
 
