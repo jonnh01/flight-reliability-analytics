@@ -14,7 +14,7 @@ on:
         description: "Months of history to keep"
         default: "12"
       run_analysis:
-        description: "Also run query benchmarks, scorecard sensitivity and the notebook on the real data"
+        description: "Also run benchmarks, scorecard sensitivity, case studies and the notebook on the real data"
         type: boolean
         default: false
 
@@ -131,25 +131,29 @@ jobs:
         if: inputs.run_analysis
         run: python analysis/scorecard_sensitivity.py
 
-      - name: Statistics notebook on the real data (optional, saved as a run artifact)
+      - name: Case study numbers on the real data (optional)
+        if: inputs.run_analysis
+        run: python analysis/case_studies.py
+
+      - name: Statistics notebook on the real data (optional, outputs committed)
         if: inputs.run_analysis
         continue-on-error: true
         run: |
-          mkdir -p notebook-output
-          jupyter nbconvert --to notebook --execute analysis/01_statistical_analysis.ipynb \
-            --ExecutePreprocessor.timeout=1200 --output-dir notebook-output
+          jupyter nbconvert --to notebook --execute --inplace analysis/01_statistical_analysis.ipynb \
+            --ExecutePreprocessor.timeout=1200
 
       - name: Publish analysis reports (optional)
         if: inputs.run_analysis
         run: |
-          git add docs/benchmarks.md docs/scorecard_sensitivity.md
+          git add docs/benchmarks.md docs/scorecard_sensitivity.md docs/case_study_data.md \
+                  analysis/01_statistical_analysis.ipynb
           if git diff --cached --quiet; then
             echo "Analysis reports unchanged." >> "$GITHUB_STEP_SUMMARY"
           else
-            git commit -m "docs: benchmarks + scorecard sensitivity on real data ($MONTHS_BACK months)"
+            git commit -m "docs: benchmarks, sensitivity, case study data and notebook on real data ($MONTHS_BACK months)"
             git pull --rebase
             git push
-            echo "Published docs/benchmarks.md and docs/scorecard_sensitivity.md." >> "$GITHUB_STEP_SUMMARY"
+            echo "Published the analysis reports and the executed notebook." >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload logs
@@ -160,7 +164,6 @@ jobs:
           path: |
             logs/
             dbt/target/run_results.json
-            notebook-output/
           retention-days: 30
 
       - name: Open an issue on failure
