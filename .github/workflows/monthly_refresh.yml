@@ -119,6 +119,7 @@ jobs:
             echo "No changes to publish." >> "$GITHUB_STEP_SUMMARY"
           else
             git commit -m "data: monthly refresh $(date -u +%Y-%m-%d)"
+            git pull --rebase   # someone may have pushed while this run was working
             git push
             echo "Published refreshed dashboard data." >> "$GITHUB_STEP_SUMMARY"
           fi
